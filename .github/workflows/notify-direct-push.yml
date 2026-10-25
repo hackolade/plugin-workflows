@@ -1,0 +1,49 @@
+name: Notify a direct push
+
+# Reusable workflow: posts the pushed commit to Slack when the pusher is the account named by
+# `commit-push-source`, i.e. a push straight to the branch rather than a merged pull request.
+# Typically called on `push: branches: [develop]`.
+
+on:
+  workflow_call:
+    inputs:
+      channel-id:
+        description: Slack channel to post to
+        type: string
+        default: develop-direct-pushes
+    secrets:
+      slack-bot-token:
+        description: Slack bot token (SLACK_BOT_TOKEN)
+        required: true
+      commit-push-source:
+        description: Pusher name that identifies a direct push (COMMIT_PUSH_SOURCE)
+        required: true
+
+jobs:
+  notify:
+    name: Notify Slack of a direct push
+    runs-on: ubuntu-26.04
+    env:
+      AUTHOR: ${{ github.event.pusher.name }}
+      COMMIT_PUSH_SOURCE: ${{ secrets.commit-push-source }}
+    steps:
+      - name: Post to Slack
+        if: env.AUTHOR == env.COMMIT_PUSH_SOURCE
+        uses: slackapi/slack-github-action@70cd7be8e40a46e8b0eced40b0de447bdb42f68e # v1.26.0
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.slack-bot-token }}
+        with:
+          channel-id: ${{ inputs.channel-id }}
+          payload: |
+            {
+              "text": " ${{ github.event.head_commit.url }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "Push: ${{ github.event.head_commit.url }}"
+                  }
+                }
+              ]
+            }

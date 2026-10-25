@@ -1,0 +1,54 @@
+name: Trigger a TeamCity build
+
+# Reusable workflow: queues a TeamCity build for the calling pull request (branch `pull/<number>`).
+# Typically called on `pull_request: types: [auto_merge_enabled]` to run the PR tests before merge.
+
+on:
+  workflow_call:
+    inputs:
+      teamcity-url:
+        description: TeamCity API base URL (vars.TEAMCITY_API_URL)
+        type: string
+        required: true
+      build-type-id:
+        description: TeamCity build configuration id
+        type: string
+        required: true
+      pass-build-branch:
+        description: Pass the pull request's source branch as the BUILD_BRANCH build property
+        type: boolean
+        default: false
+    secrets:
+      teamcity-token:
+        description: TeamCity access token allowed to queue the build (TEAMCITY_TRIGGER_TESTS_TOKEN)
+        required: true
+
+jobs:
+  trigger:
+    name: Trigger the TeamCity build
+    runs-on: ubuntu-26.04
+    steps:
+      # Values are passed through env and serialized with jq
+      - name: Queue the build
+        env:
+          TEAMCITY_URL: ${{ inputs.teamcity-url }}
+          BUILD_TYPE_ID: ${{ inputs.build-type-id }}
+          PASS_BUILD_BRANCH: ${{ inputs.pass-build-branch }}
+          TEAMCITY_TOKEN: ${{ secrets.teamcity-token }}
+          PR_NUMBER: ${{ github.event.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          body=$(jq -n \
+            --arg branch "pull/$PR_NUMBER" \
+            --arg build_type_id "$BUILD_TYPE_ID" \
+            --arg head_ref "$HEAD_REF" \
+            --argjson pass_build_branch "$PASS_BUILD_BRANCH" \
+            '{branchName: $branch, buildType: {id: $build_type_id}}
+              + if $pass_build_branch then {properties: {property: [{name: "BUILD_BRANCH", value: $head_ref}]}} else {} end')
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer $TEAMCITY_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "$body" \
+            "$TEAMCITY_URL/buildQueue"

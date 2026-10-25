@@ -1,0 +1,48 @@
+name: Link the Jira issue
+
+# Reusable workflow: finds the Jira issue key (e.g. HCK-1234) in the pull request's branch name and/or title,
+# then adds the issue details to the pull request description and labels.
+# The caller job must grant `pull-requests: write` and `contents: read`.
+
+on:
+  workflow_call:
+    inputs:
+      project-key:
+        description: Jira project key, the first part of the issue key
+        type: string
+        default: HCK
+      base-url:
+        description: Jira Cloud URL
+        type: string
+        default: https://hackolade.atlassian.net
+      use:
+        description: 'Where to look for the issue key: branch, pr-title or both'
+        type: string
+        default: both
+      skip-branches:
+        description: Regex of source branches to ignore
+        type: string
+        default: '^(develop|main|master)$'
+      fail-when-issue-not-found:
+        description: Fail the check when no Jira issue is found
+        type: boolean
+        default: false
+    secrets:
+      jira-token:
+        description: Jira API token, formatted <jira username>:<api token> (organization secret JIRA_TOKEN)
+        required: true
+
+jobs:
+  link:
+    name: Link the Jira issue
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: cakeinpanic/jira-description-action@235b8296c8b4f88c564297246810f084f853dac1 # v.10.0.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          jira-token: ${{ secrets.jira-token }}
+          jira-base-url: ${{ inputs.base-url }}
+          jira-project-key: ${{ inputs.project-key }}
+          use: ${{ inputs.use }}
+          skip-branches: ${{ inputs.skip-branches }}
+          fail-when-jira-issue-not-found: ${{ inputs.fail-when-issue-not-found }}
