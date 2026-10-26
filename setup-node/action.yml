@@ -1,0 +1,66 @@
+name: Setup Node.js
+description: Install the Node.js and npm versions pinned for every Hackolade repository
+
+inputs:
+  node-version:
+    description: Node.js version; the default is the pinned one, override only for a matrix or a deliberate exception
+    required: false
+    default: '24.22.1'
+  npm-version:
+    description: npm version installed over the one bundled with Node.js; empty keeps the bundled npm (e.g. pnpm repositories)
+    required: false
+    default: '11.7.0'
+  cache:
+    description: Package manager whose cache is restored (npm, pnpm or yarn); empty disables caching
+    required: false
+    default: ''
+  cache-dependency-path:
+    description: Lockfile(s) used as the cache key, relative to the repository root
+    required: false
+    default: ''
+  package-manager-cache:
+    description: Let actions/setup-node enable caching automatically from the packageManager field of package.json
+    required: false
+    default: 'true'
+  registry-url:
+    description: npm registry to authenticate against for publishing (e.g. https://registry.npmjs.org)
+    required: false
+    default: ''
+  architecture:
+    description: Node.js architecture (e.g. x86, x64, arm64); empty uses the runner's
+    required: false
+    default: ''
+
+outputs:
+  node-version:
+    description: The installed Node.js version
+    value: ${{ steps.setup-node.outputs.node-version }}
+  npm-version:
+    description: The installed npm version
+    value: ${{ steps.npm.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Node.js
+      id: setup-node
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: ${{ inputs.cache }}
+        cache-dependency-path: ${{ inputs.cache-dependency-path }}
+        package-manager-cache: ${{ inputs.package-manager-cache }}
+        registry-url: ${{ inputs.registry-url }}
+        architecture: ${{ inputs.architecture }}
+
+    # The npm bundled with Node.js can be newer than the pinned one, and newer versions break our installs
+    - name: Install npm
+      id: npm
+      shell: bash
+      env:
+        NPM_VERSION: ${{ inputs.npm-version }}
+      run: |
+        if [ -n "$NPM_VERSION" ] && [ "$(npm --version)" != "$NPM_VERSION" ]; then
+          npm install --global "npm@$NPM_VERSION"
+        fi
+        echo "version=$(npm --version)" >> "$GITHUB_OUTPUT"

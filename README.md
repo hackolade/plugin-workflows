@@ -1,12 +1,13 @@
 # plugin-workflows
 
-Reusable GitHub workflows shared by the [Hackolade Studio](https://hackolade.com/) plugin repositories.
+Reusable GitHub workflows and actions shared by the public repositories of [Hackolade](https://hackolade.com/), such as the Studio plugins.
 
 | Workflow | Purpose |
 |---|---|
 | [`jira-link-pr.yml`](./.github/workflows/jira-link-pr.yml) | Adds the Jira issue found in a pull request's branch or title to its description and labels |
 | [`trigger-teamcity-build.yml`](./.github/workflows/trigger-teamcity-build.yml) | Queues a TeamCity build for the calling pull request (`pull/<number>`) |
 | [`notify-direct-push.yml`](./.github/workflows/notify-direct-push.yml) | Posts a direct push to Slack |
+| [`setup-node`](./setup-node/action.yml) (action) | Installs the pinned Node.js (**24.22.1**) and npm (**11.7.0**) |
 
 The workflows hold no secrets: each caller passes its own secrets and variables.
 
@@ -76,7 +77,20 @@ jobs:
       commit-push-source: ${{ secrets.COMMIT_PUSH_SOURCE }}
 ```
 
+`setup-node`
+
+```yaml
+steps:
+  - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+  - uses: hackolade/plugin-workflows/setup-node@v1
+    with:
+      registry-url: https://registry.npmjs.org
+```
+
 ## Inputs
+
+**`setup-node`**: `node-version` (`24.22.1`), `npm-version` (`11.7.0`, installed over the bundled npm; empty keeps the bundled one), `cache`, `cache-dependency-path`, `package-manager-cache` (`true`), `registry-url`, `architecture`. Outputs: `node-version`, `npm-version`. Exact versions on purpose: a range such as `'24'` lets `actions/setup-node` reuse an older cached 24.x.
+
 
 **`jira-link-pr.yml`**: `project-key` (`HCK`), `base-url` (`https://hackolade.atlassian.net`), `use` (`both`: branch and title), `skip-branches` (`^(develop|main|master)$`), `fail-when-issue-not-found` (`false`). Secret: `jira-token`.
 

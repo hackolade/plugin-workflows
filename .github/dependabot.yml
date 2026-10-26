@@ -2,6 +2,8 @@ version: 2
 updates:
   # Keeps the SHA-pinned actions of the reusable workflows up to date
   - package-ecosystem: github-actions
-    directory: /
+    directories:
+      - /
+      - /setup-node
     schedule:
       interval: weekly

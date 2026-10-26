@@ -1,0 +1,56 @@
+name: Test setup-node
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'setup-node/**'
+      - '.github/workflows/test-setup-node.yml'
+  # Every pull request, so these checks can be required on main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-versions:
+    name: Pinned versions on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # The runners our repositories use
+        os: [ubuntu-26.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: setup
+        uses: ./setup-node
+
+      - name: Check installed versions
+        shell: bash
+        env:
+          EXPECTED_NODE: v24.22.1
+          EXPECTED_NPM: 11.7.0
+          OUTPUT_NODE: ${{ steps.setup.outputs.node-version }}
+          OUTPUT_NPM: ${{ steps.setup.outputs.npm-version }}
+        run: |
+          test "$(node --version)" = "$EXPECTED_NODE"
+          test "$(npm --version)" = "$EXPECTED_NPM"
+          test "$OUTPUT_NODE" = "$EXPECTED_NODE"
+          test "$OUTPUT_NPM" = "$EXPECTED_NPM"
+
+  bundled-npm:
+    name: Bundled npm kept when npm-version is empty
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: setup
+        uses: ./setup-node
+        with:
+          npm-version: ''
+
+      - name: Check npm is the one bundled with Node.js 24.22.1
+        shell: bash
+        run: test "$(npm --version)" = "11.19.1"
