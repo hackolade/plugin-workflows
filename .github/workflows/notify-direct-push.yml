@@ -1,3 +1,6 @@
+# Read-only copy, published automatically from Hackolade's internal source repository.
+# Do not edit it here: changes are overwritten by the next release.
+
 name: Notify a direct push
 
 # Reusable workflow: posts the pushed commit to Slack when the pusher is the account named by

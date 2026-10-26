@@ -1,3 +1,6 @@
+# Read-only copy, published automatically from Hackolade's internal source repository.
+# Do not edit it here: changes are overwritten by the next release.
+
 name: Link the Jira issue
 
 # Reusable workflow: finds the Jira issue key (e.g. HCK-1234) in the pull request's title and/or branch name,

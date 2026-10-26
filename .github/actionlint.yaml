@@ -1,3 +1,6 @@
+# Read-only copy, published automatically from Hackolade's internal source repository.
+# Do not edit it here: changes are overwritten by the next release.
+
 self-hosted-runner:
   # GitHub-hosted runner label not yet known to actionlint 1.7.12
   labels:

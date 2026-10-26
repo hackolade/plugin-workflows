@@ -1,3 +1,6 @@
+# Read-only copy, published automatically from Hackolade's internal source repository.
+# Do not edit it here: changes are overwritten by the next release.
+
 name: Lint workflows
 
 on:

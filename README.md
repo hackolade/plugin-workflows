@@ -1,5 +1,10 @@
 # plugin-workflows
 
+> [!IMPORTANT]
+> **Read-only.** This repository is a published copy, generated automatically at each release from Hackolade's internal source repository. It is only meant to be consumed: do not open pull requests or push changes here, they are not merged and are overwritten by the next release.
+>
+> **Hackolade team:** make changes in the internal source repository (its README describes the update and release process). Everyone else: report problems to your Hackolade contact, or privately as described in [SECURITY.md](./SECURITY.md).
+
 Reusable GitHub workflows and actions shared by the public repositories of [Hackolade](https://hackolade.com/), such as the Studio plugins.
 
 | Workflow | Purpose |
@@ -100,7 +105,7 @@ steps:
 
 ## Security
 
-- Third-party actions are pinned by commit SHA, the actionlint image by digest; Dependabot proposes updates after a 7-day cooldown.
+- Third-party actions are pinned by commit SHA, the actionlint image by digest; updates are reviewed before each release.
 - Every workflow and job declares its permissions, starting from none; only `jira-link-pr.yml` needs `pull-requests: write`.
 - Actions run on a supported Node.js runtime (no Node.js 20); the Jira step is a script (`curl`, `jq`, `gh`) rather than a third-party action holding the Jira token.
 - `jira-link-pr.yml` and `trigger-teamcity-build.yml` skip pull requests from forks, which receive no secrets.
@@ -109,12 +114,6 @@ steps:
 
 Report vulnerabilities as described in [SECURITY.md](./SECURITY.md).
 
-## Releasing
+## Versions
 
-Changes are released as tags, with the major tag `v1` moved to the latest release:
-
-```bash
-git tag v1.0.1 && git tag -f v1 && git push origin v1.0.1 && git push -f origin v1
-```
-
-Third-party actions are pinned by commit SHA and kept up to date by Dependabot.
+Each release is tagged `v1.x.y`, and the major tag `v1` moves to the latest one. Reference reusable workflows with `@v1`; pin the `setup-node` action to the commit of a release (`@<sha> # v1.x.y`).
