@@ -19,10 +19,14 @@ on:
         description: Pusher name that identifies a direct push (COMMIT_PUSH_SOURCE)
         required: true
 
+permissions: {}
+
 jobs:
   notify:
     name: Notify Slack of a direct push
     runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions: {}
     env:
       AUTHOR: ${{ github.event.pusher.name }}
       COMMIT_PUSH_SOURCE: ${{ secrets.commit-push-source }}

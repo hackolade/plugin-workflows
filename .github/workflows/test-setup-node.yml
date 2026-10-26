@@ -12,6 +12,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pinned-versions:
     name: Pinned versions on ${{ matrix.os }}
@@ -21,11 +25,14 @@ jobs:
         # The runners our repositories use
         os: [ubuntu-26.04, windows-2025]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - id: setup
-        uses: ./setup-node
+        uses: ./setup-node # zizmor: ignore[self-repository] tests the action as checked out by the pull request
 
       - name: Check installed versions
         shell: bash
@@ -43,11 +50,14 @@ jobs:
   bundled-npm:
     name: Bundled npm kept when npm-version is empty
     runs-on: ubuntu-26.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - id: setup
-        uses: ./setup-node
+        uses: ./setup-node # zizmor: ignore[self-repository] tests the action as checked out by the pull request
         with:
           npm-version: ''
 

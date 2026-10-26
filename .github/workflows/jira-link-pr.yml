@@ -32,10 +32,17 @@ on:
         description: Jira API token, formatted <jira username>:<api token> (organization secret JIRA_TOKEN)
         required: true
 
+permissions: {}
+
 jobs:
   link:
     name: Link the Jira issue
+    # Pull requests from forks get no secrets
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write # updates the pull request description and labels
     steps:
       - uses: cakeinpanic/jira-description-action@235b8296c8b4f88c564297246810f084f853dac1 # v.10.0.0
         with:

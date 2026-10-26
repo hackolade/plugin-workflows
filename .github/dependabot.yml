@@ -7,3 +7,6 @@ updates:
       - /setup-node
     schedule:
       interval: weekly
+    # Leaves a week for a compromised release to be caught before it is proposed
+    cooldown:
+      default-days: 7

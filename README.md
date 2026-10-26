@@ -98,6 +98,16 @@ steps:
 
 **`notify-direct-push.yml`**: `channel-id` (`develop-direct-pushes`). Secrets: `slack-bot-token`, and `commit-push-source`, the pusher name that identifies a direct push.
 
+## Security
+
+- Third-party actions are pinned by commit SHA, the actionlint image by digest; Dependabot proposes updates after a 7-day cooldown.
+- Every workflow and job declares its permissions, starting from none; only `jira-link-pr.yml` needs `pull-requests: write`.
+- `jira-link-pr.yml` and `trigger-teamcity-build.yml` skip pull requests from forks, which receive no secrets.
+- Inputs reach shell scripts through environment variables, never through `${{ }}` interpolation.
+- Every pull request runs actionlint and [zizmor](https://docs.zizmor.sh/) (auditor persona).
+
+Report vulnerabilities as described in [SECURITY.md](./SECURITY.md).
+
 ## Releasing
 
 Changes are released as tags, with the major tag `v1` moved to the latest release:

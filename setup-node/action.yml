@@ -59,7 +59,7 @@ runs:
       shell: bash
       env:
         NPM_VERSION: ${{ inputs.npm-version }}
-      run: |
+      run: | # zizmor: ignore[adhoc-packages] exact npm version from the npm-version input
         if [ -n "$NPM_VERSION" ] && [ "$(npm --version)" != "$NPM_VERSION" ]; then
           npm install --global "npm@$NPM_VERSION"
         fi
