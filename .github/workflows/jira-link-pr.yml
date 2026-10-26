@@ -1,7 +1,7 @@
 name: Link the Jira issue
 
-# Reusable workflow: finds the Jira issue key (e.g. HCK-1234) in the pull request's branch name and/or title,
-# then adds the issue details to the pull request description and labels.
+# Reusable workflow: finds the Jira issue key (e.g. HCK-1234) in the pull request's title and/or branch name,
+# then adds a link to the issue with its summary at the top of the pull request description.
 # The caller job must grant `pull-requests: write` and `contents: read`.
 
 on:
@@ -16,7 +16,7 @@ on:
         type: string
         default: https://hackolade.atlassian.net
       use:
-        description: 'Where to look for the issue key: branch, pr-title or both'
+        description: 'Where to look for the issue key: branch, pr-title or both (title first)'
         type: string
         default: both
       skip-branches:
@@ -42,14 +42,81 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
-      pull-requests: write # updates the pull request description and labels
+      pull-requests: write # updates the pull request description
     steps:
-      - uses: cakeinpanic/jira-description-action@235b8296c8b4f88c564297246810f084f853dac1 # v.10.0.0
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          jira-token: ${{ secrets.jira-token }}
-          jira-base-url: ${{ inputs.base-url }}
-          jira-project-key: ${{ inputs.project-key }}
-          use: ${{ inputs.use }}
-          skip-branches: ${{ inputs.skip-branches }}
-          fail-when-jira-issue-not-found: ${{ inputs.fail-when-issue-not-found }}
+      # Same markers as cakeinpanic/jira-description-action, so the descriptions it wrote are updated in place
+      - name: Add the Jira issue to the pull request description
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JIRA_TOKEN: ${{ secrets.jira-token }}
+          JIRA_BASE_URL: ${{ inputs.base-url }}
+          PROJECT_KEY: ${{ inputs.project-key }}
+          USE: ${{ inputs.use }}
+          SKIP_BRANCHES: ${{ inputs.skip-branches }}
+          FAIL_WHEN_NOT_FOUND: ${{ inputs.fail-when-issue-not-found }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+
+          give_up() {
+            if [ "$FAIL_WHEN_NOT_FOUND" = "true" ]; then
+              echo "::error::$1"
+              exit 1
+            fi
+            echo "::warning::$1"
+            exit 0
+          }
+
+          if [[ "$HEAD_REF" =~ ^dependabot ]] || [[ "$HEAD_REF" =~ ^(master|production|gh-pages)$ ]] \
+            || { [ -n "$SKIP_BRANCHES" ] && [[ "$HEAD_REF" =~ $SKIP_BRANCHES ]]; }; then
+            echo "Branch $HEAD_REF skipped"
+            exit 0
+          fi
+
+          find_key() {
+            { grep -ioE "\b${PROJECT_KEY}-[0-9]+\b" <<< "$1" || true; } | head -1 | tr '[:lower:]' '[:upper:]'
+          }
+          case "$USE" in
+            pr-title) key=$(find_key "$PR_TITLE") ;;
+            branch) key=$(find_key "$HEAD_REF") ;;
+            *)
+              key=$(find_key "$PR_TITLE")
+              [ -n "$key" ] || key=$(find_key "$HEAD_REF")
+              ;;
+          esac
+          [ -n "$key" ] || give_up "No ${PROJECT_KEY} issue key found in the pull request ($USE)"
+          echo "Jira issue: $key"
+
+          issue=$(curl --fail-with-body --silent --show-error --proto '=https' --tlsv1.2 --max-time 20 \
+            --user "$JIRA_TOKEN" -H 'Accept: application/json' \
+            "$JIRA_BASE_URL/rest/api/3/issue/$key?fields=summary,issuetype") \
+            || give_up "Could not read $key from Jira"
+
+          details=$(jq -r --arg url "$JIRA_BASE_URL/browse/$key" --arg key "$key" '
+            "<table>\n<td>\n  <a href=\"\($url | @html)\" title=\"\($key)\" target=\"_blank\"><img alt=\"\(.fields.issuetype.name | @html)\" src=\"\(.fields.issuetype.iconUrl | @html)\" />\($key)</a>  \(.fields.summary | @html)\n  </td></table>\n  <br />"' <<< "$issue")
+
+          export BODY START END WARNING BLOCK
+          BODY=$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" --jq '.body // ""')
+          WARNING='<!--do not remove this marker, its needed to replace info when ticket title is updated -->'
+          START='<!--jira-description-action-hidden-marker-start-->'
+          END='<!--jira-description-action-hidden-marker-end-->'
+          BLOCK=$(printf '%s\n%s\n%s\n%s' "$WARNING" "$START" "$details" "$END")
+          new_body=$(python3 -c '
+          import os
+          body, block = os.environ["BODY"], os.environ["BLOCK"]
+          start, end, warning = os.environ["START"], os.environ["END"], os.environ["WARNING"]
+          if start in body and end in body:
+              before, rest = body.split(start, 1)
+              after = rest.split(end, 1)[1].lstrip("\n")
+              before = before.replace(warning, "").rstrip("\n")
+              print((before + "\n" if before else "") + block + "\n" + after, end="")
+          else:
+              print(block + "\n" + body, end="")
+          ')
+
+          jq -n --arg body "$new_body" '{body: $body}' \
+            | gh api -X PATCH "repos/$REPOSITORY/pulls/$PR_NUMBER" --input - --silent
+          echo "Pull request description updated with $key"

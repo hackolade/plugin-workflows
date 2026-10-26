@@ -4,7 +4,7 @@ Reusable GitHub workflows and actions shared by the public repositories of [Hack
 
 | Workflow | Purpose |
 |---|---|
-| [`jira-link-pr.yml`](./.github/workflows/jira-link-pr.yml) | Adds the Jira issue found in a pull request's branch or title to its description and labels |
+| [`jira-link-pr.yml`](./.github/workflows/jira-link-pr.yml) | Adds a link to the Jira issue found in a pull request's title or branch, with its summary, at the top of its description |
 | [`trigger-teamcity-build.yml`](./.github/workflows/trigger-teamcity-build.yml) | Queues a TeamCity build for the calling pull request (`pull/<number>`) |
 | [`notify-direct-push.yml`](./.github/workflows/notify-direct-push.yml) | Posts a direct push to Slack |
 | [`setup-node`](./setup-node/action.yml) (action) | Installs the pinned Node.js (**24.22.1**) and npm (**11.7.0**) |
@@ -92,7 +92,7 @@ steps:
 **`setup-node`**: `node-version` (`24.22.1`), `npm-version` (`11.7.0`, installed over the bundled npm; empty keeps the bundled one), `cache`, `cache-dependency-path`, `package-manager-cache` (`true`), `registry-url`, `architecture`. Outputs: `node-version`, `npm-version`. Exact versions on purpose: a range such as `'24'` lets `actions/setup-node` reuse an older cached 24.x.
 
 
-**`jira-link-pr.yml`**: `project-key` (`HCK`), `base-url` (`https://hackolade.atlassian.net`), `use` (`both`: branch and title), `skip-branches` (`^(develop|main|master)$`), `fail-when-issue-not-found` (`false`). Secret: `jira-token`.
+**`jira-link-pr.yml`**: `project-key` (`HCK`), `base-url` (`https://hackolade.atlassian.net`), `use` (`both`: title first, then branch), `skip-branches` (`^(develop|main|master)$`), `fail-when-issue-not-found` (`false`). Secret: `jira-token`.
 
 **`trigger-teamcity-build.yml`**: `teamcity-url` and `build-type-id` (required), `pass-build-branch` (`false`; `true` passes the source branch as the `BUILD_BRANCH` property). Secret: `teamcity-token`. The job fails when TeamCity rejects the request.
 
@@ -102,6 +102,7 @@ steps:
 
 - Third-party actions are pinned by commit SHA, the actionlint image by digest; Dependabot proposes updates after a 7-day cooldown.
 - Every workflow and job declares its permissions, starting from none; only `jira-link-pr.yml` needs `pull-requests: write`.
+- Actions run on a supported Node.js runtime (no Node.js 20); the Jira step is a script (`curl`, `jq`, `gh`) rather than a third-party action holding the Jira token.
 - `jira-link-pr.yml` and `trigger-teamcity-build.yml` skip pull requests from forks, which receive no secrets.
 - Inputs reach shell scripts through environment variables, never through `${{ }}` interpolation.
 - Every pull request runs actionlint and [zizmor](https://docs.zizmor.sh/) (auditor persona).
