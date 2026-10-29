@@ -106,13 +106,21 @@ jobs:
               + if $all == {} then {} else {properties: {property: [$all | to_entries[] | {name: .key, value: .value}]}} end
               + if $comment == "" then {} else {comment: {text: $comment}} end
               + if $rebuild then {triggeringOptions: {rebuildAllDependencies: true}} else {} end')
-          queued=$(curl --fail-with-body --silent --show-error --proto '=https' --tlsv1.2 --max-time 60 \
+          response="$RUNNER_TEMP/teamcity-queue.json"
+          http_status=$(curl --silent --show-error --proto '=https' --tlsv1.2 --max-time 60 \
+            --output "$response" --write-out '%{http_code}' \
             -X POST \
             -H "Authorization: Bearer $TEAMCITY_TOKEN" \
             -H 'Accept: application/json' \
             -H 'Content-Type: application/json' \
             -d "$body" \
             "$TEAMCITY_URL/buildQueue")
+          # TeamCity's refusal says which permission or setting is missing
+          if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
+            echo "::error::TeamCity refused to queue the build (HTTP $http_status): $(head -c 1000 "$response" | tr -d '\r\n')"
+            exit 1
+          fi
+          queued=$(cat "$response")
           id=$(jq -r '.id // empty' <<< "$queued")
           if ! [[ "$id" =~ ^[0-9]+$ ]]; then
             echo "::error::TeamCity did not return a build id"
@@ -131,12 +139,19 @@ jobs:
           BUILD_ID: ${{ steps.queue.outputs.id }}
         run: |
           set -euo pipefail
+          response="$RUNNER_TEMP/teamcity-build.json"
           while true; do
-            build=$(curl --fail-with-body --silent --show-error --proto '=https' --tlsv1.2 --max-time 60 \
+            http_status=$(curl --silent --show-error --proto '=https' --tlsv1.2 --max-time 60 \
               --retry 3 --retry-all-errors \
+              --output "$response" --write-out '%{http_code}' \
               -H "Authorization: Bearer $TEAMCITY_TOKEN" \
               -H 'Accept: application/json' \
               "$TEAMCITY_URL/builds/id:$BUILD_ID?fields=state,status,statusText")
+            if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
+              echo "::error::Reading TeamCity build $BUILD_ID failed (HTTP $http_status): $(head -c 1000 "$response" | tr -d '\r\n')"
+              exit 1
+            fi
+            build=$(cat "$response")
             state=$(jq -r '.state // ""' <<< "$build")
             status=$(jq -r '.status // ""' <<< "$build")
             echo "TeamCity build $BUILD_ID: ${state:-unknown} ${status}"
