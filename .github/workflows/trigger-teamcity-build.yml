@@ -3,8 +3,9 @@
 
 name: Trigger a TeamCity build
 
-# Reusable workflow: queues a TeamCity build for the calling pull request (branch `pull/<number>`).
-# Typically called on `pull_request: types: [auto_merge_enabled]` to run the PR tests before merge.
+# Reusable workflow: queues a TeamCity build for the calling pull request (branch `pull/<number>`, or another branch),
+# and optionally waits for its result. Typically called on `pull_request: types: [auto_merge_enabled]` to run the PR
+# tests before merge.
 
 on:
   workflow_call:
@@ -17,14 +18,42 @@ on:
         description: TeamCity build configuration id
         type: string
         required: true
+      branch:
+        description: Branch to build; empty builds the pull request (pull/<number>)
+        type: string
+        default: ''
       pass-build-branch:
         description: Pass the pull request's source branch as the BUILD_BRANCH build property
         type: boolean
         default: false
+      properties:
+        description: 'Build properties, as a JSON object of strings, e.g. {"env.NAME": "value"}'
+        type: string
+        default: '{}'
+      comment:
+        description: Comment shown on the TeamCity build
+        type: string
+        default: ''
+      rebuild-dependencies:
+        description: Rebuild the snapshot dependencies instead of reusing suitable builds
+        type: boolean
+        default: false
+      wait:
+        description: Wait for the build to finish and fail unless it succeeds; cancelling the run cancels the build
+        type: boolean
+        default: false
+      timeout-minutes:
+        description: Job timeout; raise it with wait
+        type: number
+        default: 10
     secrets:
       teamcity-token:
         description: TeamCity access token allowed to queue the build (TEAMCITY_TRIGGER_TESTS_TOKEN)
         required: true
+    outputs:
+      build-url:
+        description: TeamCity page of the queued build
+        value: ${{ jobs.trigger.outputs.build-url }}
 
 permissions: {}
 
@@ -34,30 +63,114 @@ jobs:
     # Pull requests from forks get no secrets
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions: {}
+    outputs:
+      build-url: ${{ steps.queue.outputs.build-url }}
+    env:
+      TEAMCITY_URL: ${{ inputs.teamcity-url }}
+      TEAMCITY_TOKEN: ${{ secrets.teamcity-token }}
     steps:
-      # Values are passed through env and serialized with jq
+      # Every value goes through env and jq, so branch names and properties cannot inject shell or JSON
       - name: Queue the build
+        id: queue
         env:
-          TEAMCITY_URL: ${{ inputs.teamcity-url }}
           BUILD_TYPE_ID: ${{ inputs.build-type-id }}
+          BRANCH: ${{ inputs.branch }}
           PASS_BUILD_BRANCH: ${{ inputs.pass-build-branch }}
-          TEAMCITY_TOKEN: ${{ secrets.teamcity-token }}
+          PROPERTIES: ${{ inputs.properties }}
+          COMMENT: ${{ inputs.comment }}
+          REBUILD_DEPENDENCIES: ${{ inputs.rebuild-dependencies }}
           PR_NUMBER: ${{ github.event.number }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
+          case "$TEAMCITY_URL" in
+            https://*) ;;
+            *) echo "::error::teamcity-url must be an https URL"; exit 1 ;;
+          esac
+          if ! jq -e 'type == "object" and all(.[]; type == "string")' <<< "$PROPERTIES" > /dev/null; then
+            echo "::error::properties must be a JSON object of strings"
+            exit 1
+          fi
           body=$(jq -n \
-            --arg branch "pull/$PR_NUMBER" \
+            --arg branch "${BRANCH:-pull/$PR_NUMBER}" \
             --arg build_type_id "$BUILD_TYPE_ID" \
             --arg head_ref "$HEAD_REF" \
             --argjson pass_build_branch "$PASS_BUILD_BRANCH" \
-            '{branchName: $branch, buildType: {id: $build_type_id}}
-              + if $pass_build_branch then {properties: {property: [{name: "BUILD_BRANCH", value: $head_ref}]}} else {} end')
-          curl --fail-with-body --silent --show-error --proto '=https' --tlsv1.2 \
+            --argjson properties "$PROPERTIES" \
+            --arg comment "$COMMENT" \
+            --argjson rebuild "$REBUILD_DEPENDENCIES" \
+            '($properties + if $pass_build_branch then {BUILD_BRANCH: $head_ref} else {} end) as $all
+              | {branchName: $branch, buildType: {id: $build_type_id}}
+              + if $all == {} then {} else {properties: {property: [$all | to_entries[] | {name: .key, value: .value}]}} end
+              + if $comment == "" then {} else {comment: {text: $comment}} end
+              + if $rebuild then {triggeringOptions: {rebuildAllDependencies: true}} else {} end')
+          queued=$(curl --fail-with-body --silent --show-error --proto '=https' --tlsv1.2 --max-time 60 \
+            -X POST \
+            -H "Authorization: Bearer $TEAMCITY_TOKEN" \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            -d "$body" \
+            "$TEAMCITY_URL/buildQueue")
+          id=$(jq -r '.id // empty' <<< "$queued")
+          if ! [[ "$id" =~ ^[0-9]+$ ]]; then
+            echo "::error::TeamCity did not return a build id"
+            exit 1
+          fi
+          url=$(jq -r '.webUrl // empty' <<< "$queued")
+          echo "Queued TeamCity build $id on $(jq -r .branchName <<< "$body"): $url"
+          {
+            echo "id=$id"
+            echo "build-url=$url"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the build
+        if: inputs.wait
+        env:
+          BUILD_ID: ${{ steps.queue.outputs.id }}
+        run: |
+          set -euo pipefail
+          while true; do
+            build=$(curl --fail-with-body --silent --show-error --proto '=https' --tlsv1.2 --max-time 60 \
+              --retry 3 --retry-all-errors \
+              -H "Authorization: Bearer $TEAMCITY_TOKEN" \
+              -H 'Accept: application/json' \
+              "$TEAMCITY_URL/builds/id:$BUILD_ID?fields=state,status,statusText")
+            state=$(jq -r '.state // ""' <<< "$build")
+            status=$(jq -r '.status // ""' <<< "$build")
+            echo "TeamCity build $BUILD_ID: ${state:-unknown} ${status}"
+            if [ "$state" = finished ]; then
+              break
+            fi
+            sleep 60
+          done
+          if [ "$status" != SUCCESS ]; then
+            echo "::error::TeamCity build $BUILD_ID finished with $status: $(jq -r '.statusText // ""' <<< "$build" | tr -d '\r\n')"
+            exit 1
+          fi
+
+      # A cancelled or timed-out run would otherwise leave the build queued or running
+      - name: Cancel the build
+        if: cancelled() && inputs.wait && steps.queue.outputs.id != ''
+        env:
+          BUILD_ID: ${{ steps.queue.outputs.id }}
+        run: |
+          set -euo pipefail
+          request='{"comment": "GitHub Actions run cancelled", "readdIntoQueue": false}'
+          state=$(curl --fail-with-body --silent --show-error --proto '=https' --tlsv1.2 --max-time 30 \
+            -H "Authorization: Bearer $TEAMCITY_TOKEN" \
+            -H 'Accept: application/json' \
+            "$TEAMCITY_URL/builds/id:$BUILD_ID?fields=state" | jq -r '.state // ""')
+          case "$state" in
+            queued) resource=buildQueue ;;
+            running) resource=builds ;;
+            *) echo "TeamCity build $BUILD_ID is ${state:-gone}: nothing to cancel"; exit 0 ;;
+          esac
+          curl --fail-with-body --silent --show-error --proto '=https' --tlsv1.2 --max-time 30 \
             -X POST \
             -H "Authorization: Bearer $TEAMCITY_TOKEN" \
             -H 'Content-Type: application/json' \
-            -d "$body" \
-            "$TEAMCITY_URL/buildQueue"
+            -d "$request" \
+            "$TEAMCITY_URL/$resource/id:$BUILD_ID" > /dev/null
+          echo "Cancelled TeamCity build $BUILD_ID"

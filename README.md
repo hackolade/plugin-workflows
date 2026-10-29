@@ -10,7 +10,7 @@ Reusable GitHub workflows and actions shared by the public repositories of [Hack
 | Workflow | Purpose |
 |---|---|
 | [`jira-link-pr.yml`](./.github/workflows/jira-link-pr.yml) | Adds a link to the Jira issue found in a pull request's title or branch, with its summary, at the top of its description |
-| [`trigger-teamcity-build.yml`](./.github/workflows/trigger-teamcity-build.yml) | Queues a TeamCity build for the calling pull request (`pull/<number>`) |
+| [`trigger-teamcity-build.yml`](./.github/workflows/trigger-teamcity-build.yml) | Queues a TeamCity build for the calling pull request (`pull/<number>`) or another branch, and can wait for its result |
 | [`notify-direct-push.yml`](./.github/workflows/notify-direct-push.yml) | Posts a direct push to Slack |
 | [`setup-node`](./setup-node/action.yml) (action) | Installs the pinned Node.js (**24.22.1**) and npm (**11.7.0**) |
 
@@ -99,7 +99,7 @@ steps:
 
 **`jira-link-pr.yml`**: `project-key` (`HCK`), `base-url` (`https://hackolade.atlassian.net`), `use` (`both`: title first, then branch), `skip-branches` (`^(develop|main|master)$`), `fail-when-issue-not-found` (`false`). Secret: `jira-token`.
 
-**`trigger-teamcity-build.yml`**: `teamcity-url` and `build-type-id` (required), `pass-build-branch` (`false`; `true` passes the source branch as the `BUILD_BRANCH` property). Secret: `teamcity-token`. The job fails when TeamCity rejects the request.
+**`trigger-teamcity-build.yml`**: `teamcity-url` (HTTPS) and `build-type-id` (required), `branch` (empty: `pull/<number>`), `pass-build-branch` (`false`; `true` passes the source branch as the `BUILD_BRANCH` property), `properties` (JSON object of strings, `{}`), `comment`, `rebuild-dependencies` (`false`), `wait` (`false`; `true` waits for the build, fails unless it succeeds, and cancels it when the run is cancelled or times out), `timeout-minutes` (`10`). Secret: `teamcity-token`. Output: `build-url`. The job fails when TeamCity rejects the request.
 
 **`notify-direct-push.yml`**: `channel-id` (`develop-direct-pushes`). Secrets: `slack-bot-token`, and `commit-push-source`, the pusher name that identifies a direct push.
 
